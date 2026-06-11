@@ -83,26 +83,41 @@ async def part3_testing():
     print("PART 3: Security Testing Pipeline")
     print("=" * 60)
 
-    from testing.testing import run_comparison, print_comparison, SecurityTestPipeline
-    from agents.agent import create_unsafe_agent
+    from testing.testing import (
+        run_comparison,
+        print_comparison,
+        SecurityTestPipeline,
+        standard_attacks,
+    )
+    from agents.agent import create_protected_agent
+    from guardrails.input_guardrails import InputGuardrailPlugin
+    from guardrails.output_guardrails import OutputGuardrailPlugin, _init_judge
 
     # TODO 10: Before vs after comparison
     print("\n--- TODO 10: Before/After Comparison ---")
-    unprotected, protected = await run_comparison()
-    if unprotected and protected:
-        print_comparison(unprotected, protected)
+    unsafe_results, safe_results, input_plugin, output_plugin = await run_comparison()
+    if unsafe_results and safe_results:
+        print_comparison(unsafe_results, safe_results, input_plugin, output_plugin)
     else:
         print("Complete TODO 10 to see the comparison.")
 
     # TODO 11: Automated security pipeline
     print("\n--- TODO 11: Security Test Pipeline ---")
-    agent, runner = create_unsafe_agent()
-    pipeline = SecurityTestPipeline(agent, runner)
-    results = await pipeline.run_all()
-    if results:
-        pipeline.print_report(results)
-    else:
-        print("Complete TODO 11 to see the pipeline report.")
+    _init_judge()
+    protected_agent, protected_runner = create_protected_agent(
+        plugins=[InputGuardrailPlugin(), OutputGuardrailPlugin(use_llm_judge=True)]
+    )
+
+    nemo_rails = None
+    try:
+        from guardrails.nemo_guardrails import init_nemo
+        nemo_rails = init_nemo()
+    except Exception as e:
+        print(f"NeMo not available for pipeline: {e}")
+
+    pipeline = SecurityTestPipeline(protected_agent, protected_runner, nemo_rails=nemo_rails)
+    await pipeline.run_suite(standard_attacks)
+    print(pipeline.generate_report())
 
 
 def part4_hitl():

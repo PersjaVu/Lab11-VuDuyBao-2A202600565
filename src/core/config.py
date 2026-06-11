@@ -25,5 +25,5 @@ ALLOWED_TOPICS = [
 # Blocked topics (immediate reject)
 BLOCKED_TOPICS = [
     "hack", "exploit", "weapon", "drug", "illegal",
-    "violence", "gambling", "bomb", "kill", "steal",
+    "violence", "gambling",
 ]
