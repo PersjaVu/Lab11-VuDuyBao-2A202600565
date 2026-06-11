@@ -5,12 +5,17 @@ Lab 11 — Part 2A: Input Guardrails
   TODO 5: Input Guardrail Plugin (ADK)
 """
 import re
+import warnings
 
 from google.genai import types
 from google.adk.plugins import base_plugin
 from google.adk.agents.invocation_context import InvocationContext
 
 from core.config import ALLOWED_TOPICS, BLOCKED_TOPICS
+
+# google-adk prints "[EXPERIMENTAL] feature FeatureName.PLUGGABLE_AUTH is enabled"
+# when plugins are used — harmless, silence it to keep output clean.
+warnings.filterwarnings("ignore", message=r"\[EXPERIMENTAL\]")
 
 
 # ============================================================
@@ -38,9 +43,18 @@ def detect_injection(user_input: str) -> bool:
         True if injection detected, False otherwise
     """
     INJECTION_PATTERNS = [
-        # TODO: Add at least 5 regex patterns
-        # Example:
-        # r"ignore (all )?(previous|above) instructions",
+        r"ignore (all |any )?(previous|above|prior|earlier) (instructions|prompts|directives)",
+        r"disregard (all |any )?(previous|above|prior|your) (instructions|prompts|rules)",
+        r"forget (all |everything |your )?(previous |above |prior )?(instructions|rules|context)",
+        r"you are now\b",
+        r"pretend (you are|to be)\b",
+        r"act as (a |an )?(unrestricted|jailbroken|developer|dan)\b",
+        r"\bdan\b.*(unrestricted|no restrictions|jailbreak)",
+        r"(reveal|show|print|repeat|expose|leak) (me )?your (system )?(instructions|prompt|config|configuration)",
+        r"(what is|tell me|give me) (the )?(system prompt|admin password|api key)",
+        r"override (all |any |your |the )?(safety|system|security|rules|protocols|filters)",
+        r"\bsystem prompt\b",
+        r"\b(base64|rot13|hexadecimal|decode|encode)\b",
     ]
 
     for pattern in INJECTION_PATTERNS:
@@ -70,12 +84,16 @@ def topic_filter(user_input: str) -> bool:
     """
     input_lower = user_input.lower()
 
-    # TODO: Implement logic:
-    # 1. If input contains any blocked topic -> return True
-    # 2. If input doesn't contain any allowed topic -> return True
-    # 3. Otherwise -> return False (allow)
+    # 1. Blocked topic present -> block immediately
+    if any(blocked in input_lower for blocked in BLOCKED_TOPICS):
+        return True
 
-    pass  # Replace with your implementation
+    # 2. No allowed (banking) topic present -> off-topic, block
+    if not any(allowed in input_lower for allowed in ALLOWED_TOPICS):
+        return True
+
+    # 3. On-topic and clean -> allow
+    return False
 
 
 # ============================================================
@@ -128,14 +146,26 @@ class InputGuardrailPlugin(base_plugin.BasePlugin):
         self.total_count += 1
         text = self._extract_text(user_message)
 
-        # TODO: Implement logic:
-        # 1. Call detect_injection(text)
-        #    - If True: increment blocked_count, return self._block_response("...")
-        # 2. Call topic_filter(text)
-        #    - If True: increment blocked_count, return self._block_response("...")
-        # 3. If both are False: return None (let message through)
+        # 1. Prompt injection / jailbreak attempt
+        if detect_injection(text):
+            self.blocked_count += 1
+            return self._block_response(
+                "I cannot process this request. It appears to contain instructions "
+                "that could compromise system safety. I can only help with banking "
+                "questions about your account, transactions, savings, or loans."
+            )
 
-        pass  # Replace with your implementation
+        # 2. Off-topic or blocked topic
+        if topic_filter(text):
+            self.blocked_count += 1
+            return self._block_response(
+                "I'm a VinBank assistant and can only help with banking-related "
+                "questions (accounts, transactions, savings, loans, cards). "
+                "Please rephrase your question around one of those topics."
+            )
+
+        # 3. Safe -> let it through to the LLM
+        return None
 
 
 # ============================================================
